@@ -20,7 +20,6 @@
 
 const int g_width = 640;
 const int g_height = 512;
-
 struct GuidedResultBuffer {
     std::vector<float> guidedfilter;
     std::vector<float> edge;
@@ -199,9 +198,10 @@ void *AlgoProcess(void* p) {
             const float* __restrict gfp = target_buffer.guidedfilter.data();
             float* __restrict edgep = target_buffer.edge.data();
 
-            for (int i = 0; i < n_pixels; ++i) {
-                edgep[i] = gfp[i] - (a2p[i] * mfp[i] + b2p[i]);
-            }
+            // for (int i = 0; i < n_pixels; ++i) {
+            //     edgep[i] = gfp[i] - (a2p[i] * mfp[i] + b2p[i]);
+            // }
+            guided_filter_compute_edge_neon(gfp, a2p, mfp, b2p, edgep, n_pixels);
 
             g_active_guided_idx.store(guided_slot, std::memory_order_release);
             last_edge_done = guided_slot;
@@ -230,17 +230,18 @@ void *MainMedia(void* p) {
     // 保存视频测试
     constexpr int SAVE_START_FRAME = 1;          // 起始帧(含)，cnt 从1开始
     constexpr int SAVE_END_FRAME   = 1000;       // 结束帧(含)
-    constexpr const char* SAVE_DIR = "/root/qutao/image";
+    constexpr const char* SAVE_DIR = "/root/IR_ISP/image";
     bool saving_enabled = true;
 
     // 模拟帧序列
-    const char* raw_data = "/root/qutao/scene.dat";
-    const char* shut_data = "/root/qutao/shutter.dat";
+    const char* raw_data = "/root/IR_ISP/scene.dat";
+    const char* shut_data = "/root/IR_ISP/shutter.dat";
     FILE* f_raw = std::fopen(raw_data, "rb");
     FILE* f_shutter = std::fopen(shut_data, "rb");
     std::vector<uint16_t> raw_u16(n_pixels), shut_u16(n_pixels);
     std::vector<float> nuc_cur(n_pixels);
     int mfa_buffer_idx = 0;
+
 
     // compress param
     int orgscale = 2047;
@@ -259,15 +260,17 @@ void *MainMedia(void* p) {
     std::vector<uint8_t> clahe_image(n_pixels);
     std::vector<uint8_t> output_image_u8(n_pixels);
 
+
     int cnt = 0;
     while (1) {
         cnt++;
-        int idx = cnt % 1000;
-        int idx2 = cnt % 500;
+        int idx = cnt % 100;
+        int idx2 = cnt % 50;
         if (!read_frame_at(f_raw, idx, raw_u16) || !read_frame_at(f_shutter, idx2, shut_u16)) {
             std::fprintf(stderr, "Read frame failed at index %d\n", idx);
             break;
         }
+
         auto t_total0 = std::chrono::high_resolution_clock::now();
 
         // nuc

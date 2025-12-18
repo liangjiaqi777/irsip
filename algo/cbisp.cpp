@@ -443,6 +443,112 @@ std::vector<float> guidedfilter_self(const std::vector<float>& p,
 }
 
 #if 1
+// void guidedfilter_coeffs_two_eps(const std::vector<float>& p, int width, int height,
+//                                  float eps1, float eps2,
+//                                  std::vector<float>& a1, std::vector<float>& b1,
+//                                  std::vector<float>& a2, std::vector<float>& b2,
+//                                  std::vector<float>& workspace)
+// {
+//     const int n = width * height;
+
+//     float* __restrict p_squared = workspace.data();
+//     float* __restrict mean_p    = p_squared + n;
+//     float* __restrict mean_p2   = mean_p + n;
+
+//     const float* __restrict p_ptr = p.data();
+//     float* __restrict a1_ptr = a1.data();
+//     float* __restrict b1_ptr = b1.data();
+//     float* __restrict a2_ptr = a2.data();
+//     float* __restrict b2_ptr = b2.data();
+
+//     for (int i = 0; i < n; i += 4) {
+//         float32x4_t v = vld1q_f32(p_ptr + i);
+//         vst1q_f32(p_squared + i, vmulq_f32(v, v));
+//     }
+
+//     BoxFilterBetterNeonAssemblyV2(p.data(),  mean_p,  width, height, 3);
+//     BoxFilterBetterNeonAssemblyV2(p_squared, mean_p2, width, height, 3);
+
+//     if (width >= 3 && height >= 3) {
+//         // 顶/底行
+//         std::memcpy(mean_p, mean_p + width, sizeof(float) * width);
+//         std::memcpy(mean_p + (height - 1) * width, mean_p + (height - 2) * width, sizeof(float) * width);
+//         std::memcpy(mean_p2, mean_p2 + width, sizeof(float) * width);
+//         std::memcpy(mean_p2 + (height - 1) * width, mean_p2 + (height - 2) * width, sizeof(float) * width);
+//         // 左/右列
+//         for (int y = 0; y < height; ++y) {
+//             float* r1 = mean_p  + y * width;
+//             float* r2 = mean_p2 + y * width;
+//             r1[0] = r1[1];
+//             r1[width - 1] = r1[width - 2];
+//             r2[0] = r2[1];
+//             r2[width - 1] = r2[width - 2];
+//         }
+//     }
+
+//     const float norm_val = 1.0f / 9.0f;
+//     const float32x4_t v_norm = vdupq_n_f32(norm_val);
+//     const float32x4_t v_eps1 = vdupq_n_f32(eps1);
+//     const float32x4_t v_eps2 = vdupq_n_f32(eps2);
+//     const float32x4_t v_one = vdupq_n_f32(1.0f);
+//     const float32x4_t v_zero = vdupq_n_f32(0.0f);
+//     // a2系数调整常量
+//     const float32x4_t v_035 = vdupq_n_f32(0.35f);
+//     const float32x4_t v_06 = vdupq_n_f32(0.6f);
+//     const float32x4_t v_0568 = vdupq_n_f32(0.568f);
+//     const float32x4_t v_1512 = vdupq_n_f32(0.1512f);
+//     const float32x4_t v_085 = vdupq_n_f32(0.85f);
+//     const float32x4_t v_018 = vdupq_n_f32(0.018f);
+
+//     for (int i = 0; i < n; i += 4) {
+//         // 1. 加载均值数据
+//         float32x4_t v_mean_p = vld1q_f32(mean_p + i);
+//         float32x4_t v_mean_p2 = vld1q_f32(mean_p2 + i);
+
+//         // 2. 计算归一化均值和方差
+//         float32x4_t v_mean_p_norm = vmulq_f32(v_mean_p, v_norm);
+//         float32x4_t v_var_p = vfmsq_f32(
+//             vmulq_f32(v_mean_p2, v_norm),
+//             v_mean_p_norm, v_mean_p_norm
+//         );
+//         v_var_p = vmaxq_f32(v_var_p, v_zero);
+
+//         // 3. 计算 a1 和 b1 (基础层)
+//         float32x4_t v_denom1 = vaddq_f32(v_var_p, v_eps1);
+//         float32x4_t v_inv1 = vrecpeq_f32(v_denom1);
+//         v_inv1 = vmulq_f32(vrecpsq_f32(v_denom1, v_inv1), v_inv1);
+//         float32x4_t v_a1 = vmulq_f32(v_var_p, v_inv1);
+//         float32x4_t v_b1 = vmulq_f32(v_mean_p_norm, vsubq_f32(v_one, v_a1));
+//         vst1q_f32(a1_ptr + i, v_a1);
+//         vst1q_f32(b1_ptr + i, v_b1);
+
+//         // 4. 计算原始 a2 (细节层)
+//         float32x4_t v_denom2 = vaddq_f32(v_var_p, v_eps2);
+//         float32x4_t v_inv2 = vrecpeq_f32(v_denom2);
+//         v_inv2 = vmulq_f32(vrecpsq_f32(v_denom2, v_inv2), v_inv2);
+//         float32x4_t v_a2 = vmulq_f32(v_var_p, v_inv2);
+
+//         // 5. 根据 a1 值调整 a2 (使用向量化条件)
+//         uint32x4_t mask_lt_035 = vcltq_f32(v_a1, v_035);  // a1 < 0.35
+//         uint32x4_t mask_lt_06 = vcltq_f32(v_a1, v_06);    // a1 < 0.6
+//         uint32x4_t mask_mid = vandq_u32(vmvnq_u32(mask_lt_035), mask_lt_06); // 0.35 <= a1 < 0.6
+//         uint32x4_t mask_ge_06 = vmvnq_u32(mask_lt_06);    // a1 >= 0.6
+
+//         // 计算每个分段的值
+//         float32x4_t val1 = v_a1;  // a1 < 0.35: a2 = a1
+//         float32x4_t val2 = vaddq_f32(vmulq_f32(v_a2, v_0568), v_1512);  // 0.35 <= a1 < 0.6: a2 = 0.568*a2 + 0.1512
+//         float32x4_t val3 = vsubq_f32(vmulq_f32(v_a2, v_085), v_018);    // a1 >= 0.6: a2 = 0.85*a2 - 0.018
+
+//         // 使用掩码选择合适的值
+//         v_a2 = vbslq_f32(mask_lt_035, val1, 
+//                 vbslq_f32(mask_mid, val2, val3));
+
+//         // 6. 计算 b2 并存储
+//         float32x4_t v_b2 = vmulq_f32(v_mean_p_norm, vsubq_f32(v_one, v_a2));
+//         vst1q_f32(a2_ptr + i, v_a2);
+//         vst1q_f32(b2_ptr + i, v_b2);
+//     }
+// }
 void guidedfilter_coeffs_two_eps(const std::vector<float>& p, int width, int height,
                                  float eps1, float eps2,
                                  std::vector<float>& a1, std::vector<float>& b1,
@@ -461,92 +567,121 @@ void guidedfilter_coeffs_two_eps(const std::vector<float>& p, int width, int hei
     float* __restrict a2_ptr = a2.data();
     float* __restrict b2_ptr = b2.data();
 
+    // 1. 计算 p^2 (向量化)
     for (int i = 0; i < n; i += 4) {
         float32x4_t v = vld1q_f32(p_ptr + i);
         vst1q_f32(p_squared + i, vmulq_f32(v, v));
     }
 
+    // 2. Box Filter (汇编优化版)
     BoxFilterBetterNeonAssemblyV2(p.data(),  mean_p,  width, height, 3);
     BoxFilterBetterNeonAssemblyV2(p_squared, mean_p2, width, height, 3);
 
+    // 3. 边界填充
     if (width >= 3 && height >= 3) {
-        // 顶/底行
         std::memcpy(mean_p, mean_p + width, sizeof(float) * width);
         std::memcpy(mean_p + (height - 1) * width, mean_p + (height - 2) * width, sizeof(float) * width);
         std::memcpy(mean_p2, mean_p2 + width, sizeof(float) * width);
         std::memcpy(mean_p2 + (height - 1) * width, mean_p2 + (height - 2) * width, sizeof(float) * width);
-        // 左/右列
         for (int y = 0; y < height; ++y) {
             float* r1 = mean_p  + y * width;
             float* r2 = mean_p2 + y * width;
-            r1[0] = r1[1];
-            r1[width - 1] = r1[width - 2];
-            r2[0] = r2[1];
-            r2[width - 1] = r2[width - 2];
+            r1[0] = r1[1]; r1[width - 1] = r1[width - 2];
+            r2[0] = r2[1]; r2[width - 1] = r2[width - 2];
         }
     }
 
+    // 4. 计算系数 (全 NEON 优化)
     const float norm_val = 1.0f / 9.0f;
     const float32x4_t v_norm = vdupq_n_f32(norm_val);
     const float32x4_t v_eps1 = vdupq_n_f32(eps1);
     const float32x4_t v_eps2 = vdupq_n_f32(eps2);
-    const float32x4_t v_one = vdupq_n_f32(1.0f);
+    const float32x4_t v_one  = vdupq_n_f32(1.0f);
     const float32x4_t v_zero = vdupq_n_f32(0.0f);
-    // a2系数调整常量
+    
+    // a2 调整阈值
     const float32x4_t v_035 = vdupq_n_f32(0.35f);
-    const float32x4_t v_06 = vdupq_n_f32(0.6f);
+    const float32x4_t v_060 = vdupq_n_f32(0.60f);
     const float32x4_t v_0568 = vdupq_n_f32(0.568f);
     const float32x4_t v_1512 = vdupq_n_f32(0.1512f);
-    const float32x4_t v_085 = vdupq_n_f32(0.85f);
-    const float32x4_t v_018 = vdupq_n_f32(0.018f);
+    const float32x4_t v_085  = vdupq_n_f32(0.85f);
+    const float32x4_t v_018  = vdupq_n_f32(0.018f);
 
     for (int i = 0; i < n; i += 4) {
-        // 1. 加载均值数据
-        float32x4_t v_mean_p = vld1q_f32(mean_p + i);
-        float32x4_t v_mean_p2 = vld1q_f32(mean_p2 + i);
+        float32x4_t v_mp = vld1q_f32(mean_p + i);
+        float32x4_t v_mp2 = vld1q_f32(mean_p2 + i);
 
-        // 2. 计算归一化均值和方差
-        float32x4_t v_mean_p_norm = vmulq_f32(v_mean_p, v_norm);
-        float32x4_t v_var_p = vfmsq_f32(
-            vmulq_f32(v_mean_p2, v_norm),
-            v_mean_p_norm, v_mean_p_norm
-        );
-        v_var_p = vmaxq_f32(v_var_p, v_zero);
+        // var_p = (mean_p2 * norm) - (mean_p * norm)^2
+        float32x4_t v_mp_n = vmulq_f32(v_mp, v_norm);
+        float32x4_t v_var = vfmsq_f32(vmulq_f32(v_mp2, v_norm), v_mp_n, v_mp_n);
+        v_var = vmaxq_f32(v_var, v_zero); // 保证非负
 
-        // 3. 计算 a1 和 b1 (基础层)
-        float32x4_t v_denom1 = vaddq_f32(v_var_p, v_eps1);
-        float32x4_t v_inv1 = vrecpeq_f32(v_denom1);
-        v_inv1 = vmulq_f32(vrecpsq_f32(v_denom1, v_inv1), v_inv1);
-        float32x4_t v_a1 = vmulq_f32(v_var_p, v_inv1);
-        float32x4_t v_b1 = vmulq_f32(v_mean_p_norm, vsubq_f32(v_one, v_a1));
+        // 计算 a1, b1
+        // 使用牛顿迭代法求倒数: 1/(var+eps)
+        float32x4_t v_den1 = vaddq_f32(v_var, v_eps1);
+        float32x4_t v_inv1 = vrecpeq_f32(v_den1);
+        v_inv1 = vmulq_f32(vrecpsq_f32(v_den1, v_inv1), v_inv1);
+        
+        float32x4_t v_a1 = vmulq_f32(v_var, v_inv1);
+        float32x4_t v_b1 = vmulq_f32(v_mp_n, vsubq_f32(v_one, v_a1));
+        
         vst1q_f32(a1_ptr + i, v_a1);
         vst1q_f32(b1_ptr + i, v_b1);
 
-        // 4. 计算原始 a2 (细节层)
-        float32x4_t v_denom2 = vaddq_f32(v_var_p, v_eps2);
-        float32x4_t v_inv2 = vrecpeq_f32(v_denom2);
-        v_inv2 = vmulq_f32(vrecpsq_f32(v_denom2, v_inv2), v_inv2);
-        float32x4_t v_a2 = vmulq_f32(v_var_p, v_inv2);
+        // 计算 a2 (原始)
+        float32x4_t v_den2 = vaddq_f32(v_var, v_eps2);
+        float32x4_t v_inv2 = vrecpeq_f32(v_den2);
+        v_inv2 = vmulq_f32(vrecpsq_f32(v_den2, v_inv2), v_inv2);
+        float32x4_t v_a2 = vmulq_f32(v_var, v_inv2);
 
-        // 5. 根据 a1 值调整 a2 (使用向量化条件)
-        uint32x4_t mask_lt_035 = vcltq_f32(v_a1, v_035);  // a1 < 0.35
-        uint32x4_t mask_lt_06 = vcltq_f32(v_a1, v_06);    // a1 < 0.6
-        uint32x4_t mask_mid = vandq_u32(vmvnq_u32(mask_lt_035), mask_lt_06); // 0.35 <= a1 < 0.6
-        uint32x4_t mask_ge_06 = vmvnq_u32(mask_lt_06);    // a1 >= 0.6
+        // 调整 a2 (向量化分支消除)
+        uint32x4_t m_lt_035 = vcltq_f32(v_a1, v_035);
+        uint32x4_t m_lt_060 = vcltq_f32(v_a1, v_060);
+        
+        // 分段计算
+        float32x4_t v_mid = vaddq_f32(vmulq_f32(v_a2, v_0568), v_1512); // 0.35~0.6
+        float32x4_t v_hi  = vsubq_f32(vmulq_f32(v_a2, v_085),  v_018);  // >0.6
+        
+        // 选择逻辑: a1 < 0.35 ? a2 : (a1 < 0.6 ? mid : hi)
+        v_a2 = vbslq_f32(m_lt_035, v_a2, vbslq_f32(m_lt_060, v_mid, v_hi));
 
-        // 计算每个分段的值
-        float32x4_t val1 = v_a1;  // a1 < 0.35: a2 = a1
-        float32x4_t val2 = vaddq_f32(vmulq_f32(v_a2, v_0568), v_1512);  // 0.35 <= a1 < 0.6: a2 = 0.568*a2 + 0.1512
-        float32x4_t val3 = vsubq_f32(vmulq_f32(v_a2, v_085), v_018);    // a1 >= 0.6: a2 = 0.85*a2 - 0.018
-
-        // 使用掩码选择合适的值
-        v_a2 = vbslq_f32(mask_lt_035, val1, 
-                vbslq_f32(mask_mid, val2, val3));
-
-        // 6. 计算 b2 并存储
-        float32x4_t v_b2 = vmulq_f32(v_mean_p_norm, vsubq_f32(v_one, v_a2));
+        // 计算 b2
+        float32x4_t v_b2 = vmulq_f32(v_mp_n, vsubq_f32(v_one, v_a2));
+        
         vst1q_f32(a2_ptr + i, v_a2);
         vst1q_f32(b2_ptr + i, v_b2);
+    }
+}
+
+// 2. 【新增】Edge 计算专用函数
+// 公式: edge = gfp - (a2 * mfp + b2)
+void guided_filter_compute_edge_neon(const float* gfp, 
+                                     const float* a2p, 
+                                     const float* mfp, 
+                                     const float* b2p, 
+                                     float* edgep, 
+                                     int n_pixels) 
+{
+    int i = 0;
+    // 主循环：每次处理 4 个像素
+    for (; i <= n_pixels - 4; i += 4) {
+        float32x4_t v_g  = vld1q_f32(gfp + i);
+        float32x4_t v_a2 = vld1q_f32(a2p + i);
+        float32x4_t v_m  = vld1q_f32(mfp + i);
+        float32x4_t v_b2 = vld1q_f32(b2p + i);
+        
+        // detail = a2 * mfp + b2
+        float32x4_t v_detail = vfmaq_f32(v_b2, v_a2, v_m);
+        
+        // edge = gfp - detail
+        float32x4_t v_edge = vsubq_f32(v_g, v_detail);
+        
+        vst1q_f32(edgep + i, v_edge);
+    }
+    
+    // 处理剩余像素
+    for (; i < n_pixels; ++i) {
+        edgep[i] = gfp[i] - (a2p[i] * mfp[i] + b2p[i]);
     }
 }
 #else
@@ -687,154 +822,404 @@ void guided_filter_fma_neon_asm(const float* __restrict a1_ptr,
  * @param height 图像高度
  * @param clip_limit 对比度限制阈值(例如 2.0).如果为0, 则不进行裁剪.
  */
+// void clahe8u(const uint8_t* __restrict in, uint8_t* __restrict out, int width, int height, float clip_limit)
+// {
+//     constexpr int num_tiles_x = 4;
+//     constexpr int num_tiles_y = 4;
+
+//     if (!in || !out || width <= 0 || height <= 0 || num_tiles_x <= 0 || num_tiles_y <= 0 ||
+//         width % num_tiles_x != 0 || height % num_tiles_y != 0) {
+//         return;
+//     }
+
+//     constexpr int num_bins = 256;
+//     const int num_tiles = num_tiles_x * num_tiles_y;
+//     const int tile_w = width / num_tiles_x;
+//     const int tile_h = height / num_tiles_y;
+//     const int tile_pixels = tile_w * tile_h;
+
+//     std::array<uint32_t, 4096> hist= {0};       // 4 x 4 x 256
+//     std::array<uint8_t, 4096> luts_soa = {0};
+
+//     // 1. 分块与直方图统计
+//     for (int ty = 0; ty < num_tiles_y; ++ty) {
+//         for (int tx = 0; tx < num_tiles_x; ++tx) {
+//             const int tile_idx = ty * num_tiles_x + tx;
+//             uint32_t* H = &hist[tile_idx * num_bins];
+//             const int y_base = ty * tile_h;
+//             const int x_base = tx * tile_w;
+
+//             for (int y_offset = 0; y_offset < tile_h; ++y_offset) {
+//                 const uint8_t* p_in_row = &in[(y_base + y_offset) * width + x_base];
+//                 for (int x_offset = 0; x_offset < tile_w; ++x_offset) {
+//                     ++H[p_in_row[x_offset]];
+//                 }
+//             }
+//         }
+//     }
+
+//     // 2. 直方图裁剪与LUT计算
+//     for (int i = 0; i < num_tiles; ++i) {
+//         uint32_t* H = &hist[i * num_bins];
+
+//         if (clip_limit > 0.0f) {
+//             const int actual_clip_limit = std::max(1, (int)(clip_limit * tile_pixels / num_bins));
+
+//             int clipped = 0;
+//             for (int b = 0; b < num_bins; ++b) {
+//                 if ((int)H[b] > actual_clip_limit) {
+//                     clipped += (int)H[b] - actual_clip_limit;
+//                     H[b] = (uint32_t)actual_clip_limit;
+//                 }
+//             }
+
+//             const int add_all = clipped / num_bins;
+//             const int residual = clipped % num_bins;
+//             for (int b = 0; b < num_bins; ++b) H[b] += add_all;
+//             for (int b = 0; b < residual; ++b) ++H[b];
+//         }
+
+//         uint32_t cdf = 0;
+//         for (int b = 0; b < num_bins; ++b) {
+//             cdf += H[b];
+//             uint32_t v = (cdf * (num_bins - 1) + tile_pixels / 2) / tile_pixels;
+//             luts_soa[b * num_tiles + i] = (uint8_t)std::min(v, 255u);
+//         }
+//     }
+
+//     // 3. 双线性插值映射
+//     constexpr int FP_SHIFT = 8;
+//     constexpr int FP_ONE = 1 << FP_SHIFT;
+//     const int tile_w_half = tile_w / 2;
+//     const int tile_h_half = tile_h / 2;
+//     const int step_fp = FP_ONE / tile_w;
+
+//     for (int y = 0; y < height; ++y) {
+//         const uint8_t* p_in_row = &in[y * width];
+//         uint8_t* p_out_row = &out[y * width];
+
+//         int ty_ref = (y - tile_h_half) / tile_h;
+//         if (ty_ref < 0) ty_ref = 0;
+//         int ty_top = ty_ref;
+//         int ty_bottom = std::min(ty_top + 1, num_tiles_y - 1);
+//         int y_center_tl = ty_top * tile_h + tile_h_half;
+
+//         int wy_fp = ((y - y_center_tl) * FP_ONE) / tile_h;
+//         if (wy_fp < 0) wy_fp = 0;
+//         else if (wy_fp > FP_ONE) wy_fp = FP_ONE;
+
+//         const int y_idx_top = ty_top * num_tiles_x;
+//         const int y_idx_bottom = ty_bottom * num_tiles_x;
+
+//         int x = 0;
+
+//         int left_end = std::min(tile_w_half, width);
+//         if (left_end > 0) {
+//             const int idx_tl = y_idx_top + 0;
+//             const int idx_bl = y_idx_bottom + 0;
+//             for (; x < left_end; ++x) {
+//                 const uint8_t pix = p_in_row[x];
+//                 const uint8_t* p_lut_bin = &luts_soa[pix * num_tiles]; // luts_soa 行起始
+//                 const int tl = p_lut_bin[idx_tl];
+//                 const int bl = p_lut_bin[idx_bl];
+//                 const int val = tl + (((bl - tl) * wy_fp) >> FP_SHIFT);
+//                 p_out_row[x] = (uint8_t)val;
+//             }
+//         }
+        
+//         for (int tx_left = 0; tx_left < num_tiles_x - 1; ++tx_left) {
+//             const int x_center_tl = tx_left * tile_w + tile_w_half;
+//             int x_start = std::max(x, x_center_tl);
+//             int x_end   = std::min(width, x_center_tl + tile_w);
+//             if (x_start >= x_end) continue;
+
+//             const int idx_tl = y_idx_top + tx_left;
+//             const int idx_tr = idx_tl + 1;
+//             const int idx_bl = y_idx_bottom + tx_left;
+//             const int idx_br = idx_bl + 1;
+
+//             for (int xi = x_start; xi < x_end; ++xi) {
+//                 int wx_fp = ((xi - x_center_tl) * FP_ONE) / tile_w;
+//                 if (wx_fp < 0) wx_fp = 0;
+//                 else if (wx_fp > FP_ONE) wx_fp = FP_ONE;
+
+//                 const uint8_t pix = p_in_row[xi];
+//                 const uint8_t* p_lut_bin = &luts_soa[pix * num_tiles];
+
+//                 const int tl = p_lut_bin[idx_tl];
+//                 const int tr = p_lut_bin[idx_tr];
+//                 const int bl = p_lut_bin[idx_bl];
+//                 const int br = p_lut_bin[idx_br];
+
+//                 const int top = tl + (((tr - tl) * wx_fp) >> FP_SHIFT);
+//                 const int bot = bl + (((br - bl) * wx_fp) >> FP_SHIFT);
+//                 const int val = top + (((bot - top) * wy_fp) >> FP_SHIFT);
+
+//                 p_out_row[xi] = (uint8_t)val;
+//             }
+//             x = x_end;
+//         }
+
+//         if (x < width) {
+//             const int idx_tr = y_idx_top + (num_tiles_x - 1);
+//             const int idx_br = y_idx_bottom + (num_tiles_x - 1);
+//             for (; x < width; ++x) {
+//                 const uint8_t pix = p_in_row[x];
+//                 const uint8_t* p_lut_bin = &luts_soa[pix * num_tiles];
+//                 const int tr = p_lut_bin[idx_tr];
+//                 const int br = p_lut_bin[idx_br];
+//                 const int val = tr + (((br - tr) * wy_fp) >> FP_SHIFT);
+//                 p_out_row[x] = (uint8_t)val;
+//             }
+//         }
+//     }
+// }
+#define CLIP(val, min, max) ((val) < (min) ? (min) : ((val) > (max) ? (max) : (val)))
+
 void clahe8u(const uint8_t* __restrict in, uint8_t* __restrict out, int width, int height, float clip_limit)
 {
     constexpr int num_tiles_x = 4;
     constexpr int num_tiles_y = 4;
-
-    if (!in || !out || width <= 0 || height <= 0 || num_tiles_x <= 0 || num_tiles_y <= 0 ||
-        width % num_tiles_x != 0 || height % num_tiles_y != 0) {
-        return;
-    }
-
     constexpr int num_bins = 256;
-    const int num_tiles = num_tiles_x * num_tiles_y;
+    
+    if (width % num_tiles_x != 0 || height % num_tiles_y != 0) return;
+
     const int tile_w = width / num_tiles_x;
     const int tile_h = height / num_tiles_y;
     const int tile_pixels = tile_w * tile_h;
 
-    std::array<uint32_t, 4096> hist= {0};       // 4 x 4 x 256
-    std::array<uint8_t, 4096> luts_soa = {0};
+    // 1. 内存布局优化：[Tile][Bin] (16字节对齐)
+    alignas(16) uint8_t luts[num_tiles_x * num_tiles_y][num_bins];
+    std::array<uint32_t, num_bins> hist_cache;
 
-    // 1. 分块与直方图统计
+    // --- 阶段1：直方图与LUT生成 ---
     for (int ty = 0; ty < num_tiles_y; ++ty) {
         for (int tx = 0; tx < num_tiles_x; ++tx) {
             const int tile_idx = ty * num_tiles_x + tx;
-            uint32_t* H = &hist[tile_idx * num_bins];
+            
+            // 1.1 统计直方图 (手动 4 路展开)
+            std::memset(hist_cache.data(), 0, sizeof(hist_cache));
             const int y_base = ty * tile_h;
             const int x_base = tx * tile_w;
-
-            for (int y_offset = 0; y_offset < tile_h; ++y_offset) {
-                const uint8_t* p_in_row = &in[(y_base + y_offset) * width + x_base];
-                for (int x_offset = 0; x_offset < tile_w; ++x_offset) {
-                    ++H[p_in_row[x_offset]];
+            
+            for (int y = 0; y < tile_h; ++y) {
+                const uint8_t* ptr = in + (y_base + y) * width + x_base;
+                int x = 0;
+                for (; x <= tile_w - 4; x += 4) {
+                    hist_cache[ptr[x]]++;
+                    hist_cache[ptr[x+1]]++;
+                    hist_cache[ptr[x+2]]++;
+                    hist_cache[ptr[x+3]]++;
                 }
+                for (; x < tile_w; ++x) hist_cache[ptr[x]]++;
+            }
+
+            // 1.2 裁剪 (Clip)
+            if (clip_limit > 0.0f) {
+                int limit = std::max(1, (int)(clip_limit * tile_pixels / num_bins));
+                int clipped = 0;
+                for (int i = 0; i < num_bins; ++i) {
+                    if ((int)hist_cache[i] > limit) {
+                        clipped += (int)hist_cache[i] - limit;
+                        hist_cache[i] = limit;
+                    }
+                }
+                int add = clipped / num_bins;
+                int rem = clipped % num_bins;
+                for (int i = 0; i < num_bins; ++i) hist_cache[i] += add;
+                for (int i = 0; i < rem; ++i) hist_cache[i]++;
+            }
+
+            // 1.3 生成 CDF
+            uint32_t cdf = 0;
+            for (int i = 0; i < num_bins; ++i) {
+                cdf += hist_cache[i];
+                luts[tile_idx][i] = (uint8_t)((cdf * 255 + tile_pixels / 2) / tile_pixels);
             }
         }
     }
 
-    // 2. 直方图裁剪与LUT计算
-    for (int i = 0; i < num_tiles; ++i) {
-        uint32_t* H = &hist[i * num_bins];
-
-        if (clip_limit > 0.0f) {
-            const int actual_clip_limit = std::max(1, (int)(clip_limit * tile_pixels / num_bins));
-
-            int clipped = 0;
-            for (int b = 0; b < num_bins; ++b) {
-                if ((int)H[b] > actual_clip_limit) {
-                    clipped += (int)H[b] - actual_clip_limit;
-                    H[b] = (uint32_t)actual_clip_limit;
-                }
-            }
-
-            const int add_all = clipped / num_bins;
-            const int residual = clipped % num_bins;
-            for (int b = 0; b < num_bins; ++b) H[b] += add_all;
-            for (int b = 0; b < residual; ++b) ++H[b];
-        }
-
-        uint32_t cdf = 0;
-        for (int b = 0; b < num_bins; ++b) {
-            cdf += H[b];
-            uint32_t v = (cdf * (num_bins - 1) + tile_pixels / 2) / tile_pixels;
-            luts_soa[b * num_tiles + i] = (uint8_t)std::min(v, 255u);
-        }
-    }
-
-    // 3. 双线性插值映射
+    // --- 阶段3：双线性插值 (极致 NEON 优化) ---
     constexpr int FP_SHIFT = 8;
     constexpr int FP_ONE = 1 << FP_SHIFT;
     const int tile_w_half = tile_w / 2;
     const int tile_h_half = tile_h / 2;
-    const int step_fp = FP_ONE / tile_w;
+    const int step_x_fp = (FP_ONE * FP_ONE) / tile_w; 
 
     for (int y = 0; y < height; ++y) {
-        const uint8_t* p_in_row = &in[y * width];
-        uint8_t* p_out_row = &out[y * width];
+        int ty_f = (y - tile_h_half);
+        int ty_idx = ty_f < 0 ? 0 : ty_f / tile_h;
+        int ty_rem = ty_f < 0 ? 0 : ty_f % tile_h;
+        
+        if (ty_idx >= num_tiles_y - 1) {
+            ty_idx = num_tiles_y - 2;
+            ty_rem = tile_h; 
+        }
+        
+        const uint16_t wy = (ty_rem * FP_ONE) / tile_h;
+        const uint16_t inv_wy = FP_ONE - wy;
 
-        int ty_ref = (y - tile_h_half) / tile_h;
-        if (ty_ref < 0) ty_ref = 0;
-        int ty_top = ty_ref;
-        int ty_bottom = std::min(ty_top + 1, num_tiles_y - 1);
-        int y_center_tl = ty_top * tile_h + tile_h_half;
+        const int row1_idx = ty_idx * num_tiles_x;
+        const int row2_idx = (ty_idx + 1) * num_tiles_x;
 
-        int wy_fp = ((y - y_center_tl) * FP_ONE) / tile_h;
-        if (wy_fp < 0) wy_fp = 0;
-        else if (wy_fp > FP_ONE) wy_fp = FP_ONE;
-
-        const int y_idx_top = ty_top * num_tiles_x;
-        const int y_idx_bottom = ty_bottom * num_tiles_x;
+        const uint8_t* p_src = in + y * width;
+        uint8_t* p_dst = out + y * width;
 
         int x = 0;
 
-        int left_end = std::min(tile_w_half, width);
-        if (left_end > 0) {
-            const int idx_tl = y_idx_top + 0;
-            const int idx_bl = y_idx_bottom + 0;
-            for (; x < left_end; ++x) {
-                const uint8_t pix = p_in_row[x];
-                const uint8_t* p_lut_bin = &luts_soa[pix * num_tiles]; // luts_soa 行起始
-                const int tl = p_lut_bin[idx_tl];
-                const int bl = p_lut_bin[idx_bl];
-                const int val = tl + (((bl - tl) * wy_fp) >> FP_SHIFT);
-                p_out_row[x] = (uint8_t)val;
+        // --- Region 1: 左边缘 ---
+        if (num_tiles_x > 0) {
+            const int w_limit = std::min(width, tile_w_half);
+            const uint8_t* lut_tl = luts[row1_idx];
+            const uint8_t* lut_bl = luts[row2_idx];
+            
+            for (; x <= w_limit - 16; x += 16) {
+                uint8_t t_tl[16], t_bl[16];
+                for(int k=0; k<16; ++k) {
+                    t_tl[k] = lut_tl[p_src[x+k]];
+                    t_bl[k] = lut_bl[p_src[x+k]];
+                }
+                uint16x8_t v_tl_lo = vmovl_u8(vld1_u8(t_tl));
+                uint16x8_t v_tl_hi = vmovl_u8(vld1_u8(t_tl + 8));
+                uint16x8_t v_bl_lo = vmovl_u8(vld1_u8(t_bl));
+                uint16x8_t v_bl_hi = vmovl_u8(vld1_u8(t_bl + 8));
+
+                uint16x8_t v_res_lo = vmulq_n_u16(v_tl_lo, inv_wy);
+                v_res_lo = vmlaq_n_u16(v_res_lo, v_bl_lo, wy);
+
+                uint16x8_t v_res_hi = vmulq_n_u16(v_tl_hi, inv_wy);
+                v_res_hi = vmlaq_n_u16(v_res_hi, v_bl_hi, wy);
+
+                vst1q_u8(p_dst + x, vcombine_u8(vshrn_n_u16(v_res_lo, 8), vshrn_n_u16(v_res_hi, 8)));
+            }
+            for (; x < w_limit; ++x) {
+                uint8_t pix = p_src[x];
+                uint16_t val = ((uint16_t)lut_tl[pix] * inv_wy + (uint16_t)lut_bl[pix] * wy) >> 8;
+                p_dst[x] = (uint8_t)val;
             }
         }
-        
-        for (int tx_left = 0; tx_left < num_tiles_x - 1; ++tx_left) {
-            const int x_center_tl = tx_left * tile_w + tile_w_half;
-            int x_start = std::max(x, x_center_tl);
-            int x_end   = std::min(width, x_center_tl + tile_w);
-            if (x_start >= x_end) continue;
 
-            const int idx_tl = y_idx_top + tx_left;
-            const int idx_tr = idx_tl + 1;
-            const int idx_bl = y_idx_bottom + tx_left;
-            const int idx_br = idx_bl + 1;
+        // --- Region 2: 中间区域 (寄存器内查表 - 黑魔法版) ---
+        int32x4_t v_step_32 = vdupq_n_s32(step_x_fp);
+        int32x4_t v_step_x4 = vmulq_n_s32(v_step_32, 4);
+        int32x4_t v_step_x8 = vmulq_n_s32(v_step_32, 8);
 
-            for (int xi = x_start; xi < x_end; ++xi) {
-                int wx_fp = ((xi - x_center_tl) * FP_ONE) / tile_w;
-                if (wx_fp < 0) wx_fp = 0;
-                else if (wx_fp > FP_ONE) wx_fp = FP_ONE;
+        for (int tx = 0; tx < num_tiles_x - 1; ++tx) {
+            int x_end = std::min(width, (tx + 1) * tile_w + tile_w_half);
+            
+            // 使用 base_tl 等作为基地址
+            const uint8_t* base_tl = luts[row1_idx + tx];
+            const uint8_t* base_tr = luts[row1_idx + tx + 1];
+            const uint8_t* base_bl = luts[row2_idx + tx];
+            const uint8_t* base_br = luts[row2_idx + tx + 1];
 
-                const uint8_t pix = p_in_row[xi];
-                const uint8_t* p_lut_bin = &luts_soa[pix * num_tiles];
-
-                const int tl = p_lut_bin[idx_tl];
-                const int tr = p_lut_bin[idx_tr];
-                const int bl = p_lut_bin[idx_bl];
-                const int br = p_lut_bin[idx_br];
-
-                const int top = tl + (((tr - tl) * wx_fp) >> FP_SHIFT);
-                const int bot = bl + (((br - bl) * wx_fp) >> FP_SHIFT);
-                const int val = top + (((bot - top) * wy_fp) >> FP_SHIFT);
-
-                p_out_row[xi] = (uint8_t)val;
+            // 1. LUT 压缩 (Downsample)
+            uint8_t mini_lut[4][16];
+            for(int i=0; i<16; ++i) {
+                int idx = i * 16; 
+                mini_lut[0][i] = base_tl[idx];
+                mini_lut[1][i] = base_tr[idx];
+                mini_lut[2][i] = base_bl[idx];
+                mini_lut[3][i] = base_br[idx];
             }
-            x = x_end;
+            // 加载进寄存器，常驻！
+            uint8x16_t v_lut_tl = vld1q_u8(mini_lut[0]);
+            uint8x16_t v_lut_tr = vld1q_u8(mini_lut[1]);
+            uint8x16_t v_lut_bl = vld1q_u8(mini_lut[2]);
+            uint8x16_t v_lut_br = vld1q_u8(mini_lut[3]);
+
+            int start_acc = (x - (tx * tile_w + tile_w_half)) * step_x_fp;
+            int32x4_t v_acc_0 = vdupq_n_s32(start_acc);
+            const int32_t offsets[4] = {0*step_x_fp, 1*step_x_fp, 2*step_x_fp, 3*step_x_fp};
+            v_acc_0 = vaddq_s32(v_acc_0, vld1q_s32(offsets));
+            int32x4_t v_acc_1 = vaddq_s32(v_acc_0, v_step_x4);
+
+            for (; x <= x_end - 8; x += 8) {
+                uint16x4_t v_wx_lo = vshrn_n_u32(vreinterpretq_u32_s32(v_acc_0), 8); 
+                uint16x4_t v_wx_hi = vshrn_n_u32(vreinterpretq_u32_s32(v_acc_1), 8);
+                uint16x8_t v_wx = vcombine_u16(v_wx_lo, v_wx_hi);
+                uint16x8_t v_inv_wx = vsubq_u16(vdupq_n_u16(FP_ONE), v_wx);
+                
+                v_acc_0 = vaddq_s32(v_acc_0, v_step_x8);
+                v_acc_1 = vaddq_s32(v_acc_1, v_step_x8);
+
+                uint8x8_t v_pix = vld1_u8(p_src + x);
+
+                // 计算索引与残差
+                uint8x8_t v_idx = vshr_n_u8(v_pix, 4);
+                uint8x8_t v_rem = vand_u8(v_pix, vdup_n_u8(0x0F)); 
+
+                // Lambda: 寄存器内插值
+                auto poly_interp = [&](uint8x16_t lut) -> uint16x8_t {
+                    uint8x8x2_t lut_pair;
+                    lut_pair.val[0] = vget_low_u8(lut);
+                    lut_pair.val[1] = vget_high_u8(lut);
+                    
+                    uint8x8_t val0 = vtbl2_u8(lut_pair, v_idx);
+                    
+                    uint8x8_t v_idx_next = vadd_u8(v_idx, vdup_n_u8(1));
+                    v_idx_next = vmin_u8(v_idx_next, vdup_n_u8(15));
+                    uint8x8_t val1 = vtbl2_u8(lut_pair, v_idx_next);
+
+                    // 修复：使用 vmull_u8 (u8*u8->u16) 和 vmlal_u8 (u16+u8*u8->u16)
+                    // res = val0 * (16 - rem)
+                    uint16x8_t res = vmull_u8(val0, vsub_u8(vdup_n_u8(16), v_rem));
+                    // res += val1 * rem
+                    res = vmlal_u8(res, val1, v_rem);
+                    
+                    return vshlq_n_u16(res, 4); // Scale to 256
+                };
+
+                uint16x8_t v_tl = poly_interp(v_lut_tl);
+                uint16x8_t v_tr = poly_interp(v_lut_tr);
+                uint16x8_t v_bl = poly_interp(v_lut_bl);
+                uint16x8_t v_br = poly_interp(v_lut_br);
+
+                // 将 u16 结果右移 8 位以匹配后续计算 (近似回到 u8 域)
+                v_tl = vshrq_n_u16(v_tl, 8);
+                v_tr = vshrq_n_u16(v_tr, 8);
+                v_bl = vshrq_n_u16(v_bl, 8);
+                v_br = vshrq_n_u16(v_br, 8);
+                
+                uint16x8_t v_top = vmulq_u16(v_tl, v_inv_wx);
+                v_top = vmlaq_u16(v_top, v_tr, v_wx);
+                v_top = vshrq_n_u16(v_top, 8); 
+
+                uint16x8_t v_bot = vmulq_u16(v_bl, v_inv_wx);
+                v_bot = vmlaq_u16(v_bot, v_br, v_wx);
+                v_bot = vshrq_n_u16(v_bot, 8); 
+
+                uint16x8_t v_res = vmulq_n_u16(v_top, inv_wy);
+                v_res = vmlaq_n_u16(v_res, v_bot, wy);
+                
+                vst1_u8(p_dst + x, vshrn_n_u16(v_res, 8));
+            }
+
+            // 标量收尾部分
+            for (; x < x_end; ++x) {
+                int wx = (start_acc >> 8);
+                // 重新计算 wx 以保证精度一致性
+                wx = ((x - (tx * tile_w + tile_w_half)) * step_x_fp) >> 8;
+                
+                if (wx > FP_ONE) wx = FP_ONE;
+                if (wx < 0) wx = 0;
+
+                uint8_t pix = p_src[x];
+                // 修复：这里使用 base_tl 而不是 lut_tl
+                uint16_t top = ((uint16_t)base_tl[pix] * (FP_ONE - wx) + (uint16_t)base_tr[pix] * wx) >> 8;
+                uint16_t bot = ((uint16_t)base_bl[pix] * (FP_ONE - wx) + (uint16_t)base_br[pix] * wx) >> 8;
+                p_dst[x] = (uint8_t)((top * inv_wy + bot * wy) >> 8);
+            }
         }
 
+        // --- Region 3: 右边缘 ---
         if (x < width) {
-            const int idx_tr = y_idx_top + (num_tiles_x - 1);
-            const int idx_br = y_idx_bottom + (num_tiles_x - 1);
+            const uint8_t* lut_tr = luts[row1_idx + num_tiles_x - 1];
+            const uint8_t* lut_br = luts[row2_idx + num_tiles_x - 1];
             for (; x < width; ++x) {
-                const uint8_t pix = p_in_row[x];
-                const uint8_t* p_lut_bin = &luts_soa[pix * num_tiles];
-                const int tr = p_lut_bin[idx_tr];
-                const int br = p_lut_bin[idx_br];
-                const int val = tr + (((br - tr) * wy_fp) >> FP_SHIFT);
-                p_out_row[x] = (uint8_t)val;
+                 uint8_t pix = p_src[x];
+                 uint16_t val = ((uint16_t)lut_tr[pix] * inv_wy + (uint16_t)lut_br[pix] * wy) >> 8;
+                 p_dst[x] = (uint8_t)val;
             }
         }
     }

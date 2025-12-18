@@ -22,3 +22,9 @@ std::vector<float> guidedfilter_self(const std::vector<float>& p,
 void f32_to_u16_neon(const float* __restrict src,
                             uint16_t* __restrict dst,
                             int n);
+void guided_filter_compute_edge_neon(const float* gfp, 
+                                     const float* a2p, 
+                                     const float* mfp, 
+                                     const float* b2p, 
+                                     float* edgep, 
+                                     int n_pixels);
